@@ -79,8 +79,8 @@ async function loadLogs(): Promise<void> {
   }
 }
 
-const taskPoller = usePolling(loadTasks, { interval: 5000 })
-const logPoller = usePolling(loadLogs, { interval: 5000 })
+const taskPoller = usePolling(loadTasks, { interval: 30000 })
+const logPoller = usePolling(loadLogs, { interval: 30000 })
 const { refresh: refreshTasks } = taskPoller
 const { refresh: refreshLogs } = logPoller
 

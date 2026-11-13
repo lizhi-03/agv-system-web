@@ -244,8 +244,9 @@ export function useLiveState(options: LiveStateOptions = {}) {
   function start(): void {
     paused.value = false
     streamAttempts = 0
-    schedulePoll(0)
+    // 先尝试 SSE；1.5s 内未建立连接才回退轮询，避免建立 SSE 时多发一次 /agv/live
     openStream()
+    schedulePoll(1500)
   }
 
   function stop(): void {
@@ -274,8 +275,8 @@ export function useLiveState(options: LiveStateOptions = {}) {
   }
 
   document.addEventListener('visibilitychange', onVisibilityChange)
-  schedulePoll(0)
   openStream()
+  schedulePoll(1500)
 
   onUnmounted(() => {
     disposed = true

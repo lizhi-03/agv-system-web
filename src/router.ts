@@ -1,0 +1,66 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import DashboardView from './views/DashboardView.vue'
+import MapView from './views/MapView.vue'
+import AgvView from './views/AgvView.vue'
+import TaskView from './views/TaskView.vue'
+import MapEditView from './views/MapEditView.vue'
+import LogView from './views/LogView.vue'
+
+export interface NavItem {
+  path: string
+  label: string
+  icon: string
+}
+
+export const navItems: NavItem[] = [
+  { path: '/', label: '概览', icon: 'dashboard' },
+  { path: '/map', label: '实时地图', icon: 'map' },
+  { path: '/agv', label: '车队', icon: 'agv' },
+  { path: '/task', label: '任务', icon: 'task' },
+  { path: '/editor', label: '地图编辑', icon: 'editor' },
+  { path: '/log', label: '系统日志', icon: 'log' },
+]
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: '/',
+      name: 'dashboard',
+      component: DashboardView,
+      meta: { title: '概览', subtitle: '车辆、任务与地图运行态势一览' },
+    },
+    {
+      path: '/map',
+      name: 'map',
+      component: MapView,
+      meta: { title: '实时地图', subtitle: '每秒同步车辆位置与规划路径' },
+    },
+    {
+      path: '/agv',
+      name: 'agv',
+      component: AgvView,
+      meta: { title: '车队', subtitle: '车辆状态、调度指令与位置上报' },
+    },
+    {
+      path: '/task',
+      name: 'task',
+      component: TaskView,
+      meta: { title: '任务', subtitle: '任务分页、创建运输任务与取消' },
+    },
+    {
+      path: '/editor',
+      name: 'editor',
+      component: MapEditView,
+      meta: { title: '地图编辑', subtitle: '编辑障碍与站点并保存为新版本' },
+    },
+    {
+      path: '/log',
+      name: 'log',
+      component: LogView,
+      meta: { title: '系统日志', subtitle: '服务端日志分页与当前页筛选' },
+    },
+    { path: '/edit', redirect: '/editor' },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
+  ],
+})

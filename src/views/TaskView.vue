@@ -601,6 +601,7 @@ watch(
         ref="wizardMapRef"
         :map="mapData"
         :agvs="agvs"
+        pick-stations
         :selected-code="wizardAgvCode"
         :start-station-id="startId || null"
         :end-station-id="endId || null"

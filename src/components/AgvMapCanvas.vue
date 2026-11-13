@@ -19,6 +19,8 @@ const props = withDefaults(
     showVehicles?: boolean
     /** 编辑器模式：左键拖拽连续绘制 */
     interactive?: boolean
+    /** 站点选点模式（任务向导）：同格有车辆时优先选中站点 */
+    pickStations?: boolean
     pannable?: boolean
     zoomable?: boolean
     brushSize?: number
@@ -37,6 +39,7 @@ const props = withDefaults(
     showLabels: true,
     showVehicles: true,
     interactive: false,
+    pickStations: false,
     pannable: true,
     zoomable: true,
     brushSize: 1,
@@ -651,7 +654,13 @@ function updateHover(event: PointerEvent): void {
   hoverCell.value = cell
   emit('hover', cell)
   const agv = agvAt(cell)
-  const station = agv ? null : stationAt(cell)
+  const station = stationAt(cell)
+  // 向导选点模式：站点优先命中（车辆可能停靠在站点格上）
+  if (props.pickStations && station) {
+    showStationTip(station, local.x, local.y, wrap)
+    if (!panning) canvas.style.cursor = spacePressed ? 'grab' : 'pointer'
+    return
+  }
   if (agv) {
     showAgvTip(agv, local.x, local.y, wrap)
     if (!panning) canvas.style.cursor = spacePressed ? 'grab' : props.interactive ? 'crosshair' : 'pointer'
@@ -771,13 +780,19 @@ function handleClick(event: PointerEvent): void {
     emit('background-click')
     return
   }
+  const station = stationAt(cell)
+  // 向导选点模式：站点优先（站点可能被空闲车辆停靠）
+  if (props.pickStations && station) {
+    const { cx, cy } = cellCenter(cell.x, cell.y)
+    emit('station-click', { station, x: cx, y: cy })
+    return
+  }
   const agv = agvAt(cell)
   if (agv) {
     const { cx, cy } = cellCenter(cell.x, cell.y)
     emit('agv-click', { code: agv.agvCode, x: cx, y: cy })
     return
   }
-  const station = stationAt(cell)
   if (station) {
     const { cx, cy } = cellCenter(cell.x, cell.y)
     emit('station-click', { station, x: cx, y: cy })

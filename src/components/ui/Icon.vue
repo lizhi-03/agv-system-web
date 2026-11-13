@@ -50,6 +50,17 @@ const ICONS: Record<string, string> = {
   'x-circle':
     '<circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/>',
   undo: '<path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12h9.5a5.5 5.5 0 0 1 5.5 5.5v1"/>',
+  redo: '<path d="M15 7.5 19.5 12 15 16.5"/><path d="M19.5 12H10a5.5 5.5 0 0 0-5.5 5.5v1"/>',
+  expand:
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  fullscreen:
+    '<path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="M16 21h5v-5"/>',
+  'exit-fullscreen':
+    '<path d="M3 8h5V3"/><path d="M21 8h-5V3"/><path d="M3 16h5v5"/><path d="M21 16h-5v5"/>',
+  keyboard:
+    '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h.01"/><path d="M10 10h.01"/><path d="M14 10h.01"/><path d="M18 10h.01"/><path d="M6 13.8h.01"/><path d="M10 13.8h.01"/><path d="M14 13.8h.01"/><path d="M18 13.8h.01"/><path d="M8 17h8"/>',
+  brush:
+    '<path d="M14.5 4.5 19.5 9.5"/><path d="M17 2.5 21.5 7 12 16.5 7 11.5 17 2.5Z"/><path d="M7 11.5 4.5 21l9.5-2.5"/>',
   save: '<path d="M12 3.5v11"/><path d="m7.5 10 4.5 4.5 4.5-4.5"/><path d="M4.5 19.5h15"/>',
   layers: '<path d="m12 3.5 8.5 4.7L12 13 3.5 8.2 12 3.5Z"/><path d="m3.5 13 8.5 4.7 8.5-4.7"/>',
   route:
@@ -65,6 +76,7 @@ const ICONS: Record<string, string> = {
   battery: '<rect x="2.5" y="7.5" width="17" height="9" rx="2.5"/><path d="M21.5 11v2"/><path d="M6 10.5v3"/>',
   filter: '<path d="M4 5.5h16l-6.2 7.2V19l-3.6 1.6v-7.9L4 5.5Z"/>',
   pin: '<path d="M12 21s6.5-5.4 6.5-10.2A6.5 6.5 0 0 0 5.5 10.8C5.5 15.6 12 21 12 21Z"/><circle cx="12" cy="10.5" r="2.2"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-1.6 4L16 12H5"/>',
 }
 
 const markup = computed(() => {

@@ -100,11 +100,17 @@ export interface TaskQuery {
   page: number
   pageSize: number
   taskCode?: string
+  /** V2 服务端过滤 */
+  status?: string
+  agvCode?: string
 }
 
 export interface LogQuery {
   page: number
   pageSize: number
+  /** V2 服务端过滤 */
+  level?: string
+  message?: string
 }
 
 export interface TaskPointRequest {

@@ -28,7 +28,15 @@ const errorText = ref('')
 
 async function load(): Promise<void> {
   try {
-    const result = await pageLogs({ page: page.value, pageSize: pageSize.value }, true)
+    const result = await pageLogs(
+      {
+        page: page.value,
+        pageSize: pageSize.value,
+        level: level.value === 'all' ? undefined : level.value,
+        message: keyword.value.trim() || undefined,
+      },
+      true,
+    )
     rows.value = result.records
     total.value = result.total
     errorText.value = ''
@@ -54,19 +62,12 @@ const LEVEL_OPTIONS = [
   { value: 'error', label: '错误' },
 ]
 
-const filtered = computed(() => {
-  const word = keyword.value.trim().toLowerCase()
-  return rows.value.filter((item) => {
-    if (level.value !== 'all' && item.level !== level.value) return false
-    if (!word) return true
-    return (
-      (item.message ?? '').toLowerCase().includes(word) ||
-      (item.level ?? '').toLowerCase().includes(word)
-    )
-  })
-})
-
 const hasFilter = computed(() => level.value !== 'all' || Boolean(keyword.value.trim()))
+
+function applyFilters(): void {
+  page.value = 1
+  void load().catch(() => {})
+}
 
 function onPagerChange(payload: { page: number; pageSize: number }): void {
   page.value = payload.page
@@ -77,6 +78,7 @@ function onPagerChange(payload: { page: number; pageSize: number }): void {
 function clearFilters(): void {
   level.value = 'all'
   keyword.value = ''
+  applyFilters()
 }
 
 const pageSizeOptions = [
@@ -104,15 +106,26 @@ function onPageSizeChange(value: string): void {
 
   <div class="page">
     <div class="toolbar">
-      <AppSegmented v-model="level" :options="LEVEL_OPTIONS" size="sm" />
+      <AppSegmented
+        v-model="level"
+        :options="LEVEL_OPTIONS"
+        size="sm"
+        @update:model-value="applyFilters"
+      />
       <AppInput
         v-model="keyword"
-        placeholder="当前页关键字过滤"
+        placeholder="关键字（服务端模糊匹配）"
         icon="search"
         size="sm"
         clearable
         class="search-input"
+        @enter="applyFilters"
+        @clear="applyFilters"
       />
+      <AppButton size="sm" variant="secondary" @click="applyFilters">
+        <Icon name="search" :size="13" />
+        查询
+      </AppButton>
       <AppSelect
         :model-value="String(pageSize)"
         :options="pageSizeOptions"
@@ -125,11 +138,11 @@ function onPageSizeChange(value: string): void {
         清除筛选
       </AppButton>
       <span class="toolbar-spacer" />
-      <span class="filter-hint num">本页 {{ rows.length }} 条 · 筛选后 {{ filtered.length }} 条</span>
+      <span class="filter-hint num">本页 {{ rows.length }} 条 · 服务端筛选</span>
       <AppSwitch v-model="running" size="sm" label="自动刷新（3s）" />
     </div>
 
-    <AppCard title="系统日志" :subtitle="`共 ${total} 条 · 服务端分页，级别与关键字仅在当前页过滤`" padding="sm">
+    <AppCard title="系统日志" :subtitle="`共 ${total} 条 · 服务端分页与服务端筛选`" padding="sm">
       <div v-if="loading && !rows.length" class="table-skeleton">
         <SkeletonBlock v-for="index in 8" :key="index" height="42px" radius="10px" />
       </div>
@@ -146,11 +159,11 @@ function onPageSizeChange(value: string): void {
       </EmptyState>
 
       <EmptyState
-        v-else-if="!filtered.length"
+        v-else-if="!rows.length"
         :title="hasFilter ? '没有匹配的日志' : '暂无日志'"
         :description="
           hasFilter
-            ? '服务端不支持过滤，级别与关键字只在当前页内匹配；可清除筛选或翻页查看。'
+            ? '服务端按级别与关键字过滤后没有匹配记录；可清除筛选或更换关键字。'
             : '后端产生日志后会显示在这里。'
         "
       >
@@ -170,7 +183,7 @@ function onPageSizeChange(value: string): void {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in filtered" :key="item.logId">
+            <tr v-for="item in rows" :key="item.logId">
               <td class="num muted">#{{ item.logId }}</td>
               <td class="num nowrap">{{ formatTime(item.timestamp) }}</td>
               <td><StatusPill :status="item.level" kind="log" /></td>

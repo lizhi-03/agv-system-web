@@ -34,7 +34,7 @@ export const router = createRouter({
       path: '/map',
       name: 'map',
       component: MapView,
-      meta: { title: '实时地图', subtitle: '每秒同步车辆位置与规划路径' },
+      meta: { title: '实时地图', subtitle: '地图优先 · 滚轮缩放 / 拖拽平移 / 点击车辆直接操作', flush: true },
     },
     {
       path: '/agv',
@@ -52,7 +52,7 @@ export const router = createRouter({
       path: '/editor',
       name: 'editor',
       component: MapEditView,
-      meta: { title: '地图编辑', subtitle: '编辑障碍与站点并保存为新版本' },
+      meta: { title: '地图编辑', subtitle: '拖拽绘制 · 缩放平移 · 撤销重做 · 保存新版本', flush: true },
     },
     {
       path: '/log',

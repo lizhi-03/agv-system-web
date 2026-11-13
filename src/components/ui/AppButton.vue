@@ -69,10 +69,10 @@ defineEmits<{ click: [event: MouseEvent] }>()
 }
 
 .btn-sm {
-  height: 30px;
-  padding: 0 13px;
-  font-size: 12.5px;
-  gap: 5px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  gap: 6px;
 }
 
 .btn-icon.btn-md {
@@ -81,7 +81,7 @@ defineEmits<{ click: [event: MouseEvent] }>()
 }
 
 .btn-icon.btn-sm {
-  width: 30px;
+  width: 36px;
   padding: 0;
 }
 

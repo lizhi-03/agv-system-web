@@ -66,6 +66,12 @@ function normalizeAgv(raw: RawAgv | null | undefined): AgvSnapshot {
   }
 }
 
+/** 把未知 JSON 数组归一化为车辆快照数组（供实时快照接口复用） */
+export function normalizeAgvList(raw: unknown): AgvSnapshot[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item) => normalizeAgv(item as RawAgv))
+}
+
 /** 全部车辆状态（POST /agv/list，无 body） */
 export function listAgv(quiet = false): Promise<AgvSnapshot[]> {
   return requestList<RawAgv>({ url: '/agv/list', method: 'post' }, quiet).then((list) =>
@@ -81,9 +87,11 @@ export function getAgv(agvCode: string, quiet = false): Promise<AgvSnapshot | nu
   ).then((raw) => (raw ? normalizeAgv(raw) : null))
 }
 
-/** 动态加车：固定生成 AGVplus0001..AGVplus{n}（1..20） */
-export function batchAgv(count: number): Promise<null> {
-  return request<null>({ url: `/agv/batch/${count}`, method: 'post' })
+/** 动态加车：后端返回新生成的编号数组（V2；旧版返回 null） */
+export function batchAgv(count: number): Promise<string[]> {
+  return request<string[] | null>({ url: `/agv/batch/${count}`, method: 'post' }).then((data) =>
+    Array.isArray(data) ? data.map((code) => String(code)) : [],
+  )
 }
 
 /** 前往最近充电站 */
@@ -99,6 +107,13 @@ export function reportAgv(payload: ReportAgvPayload): Promise<null> {
 /** 创建并开始任务（POST /agv/path），返回规划路径节点 */
 export function createPathTask(payload: CreateTaskPayload): Promise<PathNode[]> {
   return request<PathNode[] | null>({ url: '/agv/path', method: 'post', data: payload }, false).then(
+    (nodes) => normalizeNodes(nodes),
+  )
+}
+
+/** 只规划不落库（POST /agv/preview，V2 新增），返回规划路径节点 */
+export function previewPath(payload: CreateTaskPayload): Promise<PathNode[]> {
+  return request<PathNode[] | null>({ url: '/agv/preview', method: 'post', data: payload }).then(
     (nodes) => normalizeNodes(nodes),
   )
 }

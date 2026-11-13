@@ -2,16 +2,20 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { navItems } from './router'
+import AppModal from './components/ui/AppModal.vue'
 import Icon from './components/ui/Icon.vue'
 import ToastHost from './components/ui/ToastHost.vue'
 import ConfirmHost from './components/ui/ConfirmHost.vue'
+import { liveStatus } from './api/live'
 import { useBackendStatus } from './composables/useBackendStatus'
+import { useShortcuts } from './composables/useShortcuts'
 import { useTheme, type ThemeMode } from './composables/useTheme'
 import { formatClock, formatLatency } from './utils/labels'
 
 const route = useRoute()
 const { status, checking, retry } = useBackendStatus()
 const { mode, setMode } = useTheme()
+const { helpOpen, shortcuts } = useShortcuts()
 
 const drawerOpen = ref(false)
 const now = ref(new Date())
@@ -46,6 +50,21 @@ const connectionSub = computed(() => {
 const lastSyncText = computed(() =>
   status.lastSuccessAt ? formatClock(status.lastSuccessAt) : '—',
 )
+
+const liveSourceText = computed(() => {
+  switch (liveStatus.mode) {
+    case 'stream':
+      return '实时推送'
+    case 'poll':
+      return '轮询（自适应）'
+    case 'list':
+      return '轮询（兼容）'
+    default:
+      return '连接中'
+  }
+})
+
+const liveLastAtText = computed(() => (liveStatus.lastAt ? formatClock(liveStatus.lastAt) : '—'))
 
 function isActive(path: string): boolean {
   return route.path === path
@@ -125,6 +144,7 @@ onUnmounted(() => {
           </div>
           <div class="conn-meta">
             <span class="num">最后同步 {{ lastSyncText }}</span>
+            <span class="num">数据源 {{ liveSourceText }} · {{ liveLastAtText }}</span>
             <span v-if="!status.reachable && status.lastError" class="conn-error">
               {{ status.lastError }}
             </span>
@@ -151,7 +171,7 @@ onUnmounted(() => {
 
     <div v-if="drawerOpen" class="scrim" @click="drawerOpen = false" />
 
-    <div class="main">
+    <div class="main" :class="{ 'main-flush': route.meta.flush }">
       <header class="topbar">
         <button
           type="button"
@@ -174,7 +194,7 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <main class="content">
+      <main class="content" :class="{ flush: route.meta.flush }">
         <RouterView v-slot="{ Component }">
           <component :is="Component" />
         </RouterView>
@@ -183,6 +203,34 @@ onUnmounted(() => {
 
     <ToastHost />
     <ConfirmHost />
+
+    <button
+      type="button"
+      class="help-fab"
+      aria-label="快捷键帮助（?）"
+      title="快捷键帮助（?）"
+      @click="helpOpen = true"
+    >
+      <Icon name="keyboard" :size="18" />
+      <span class="help-fab-key">?</span>
+    </button>
+
+    <AppModal v-model="helpOpen" title="快捷键与帮助" :width="470" :show-footer="false">
+      <p class="help-intro">
+        在非输入状态下按以下按键快速切换页面；按 <kbd>?</kbd> 打开 / 关闭本面板。
+      </p>
+      <div class="shortcut-grid">
+        <div v-for="item in shortcuts" :key="item.keys" class="shortcut-row">
+          <kbd>{{ item.keys }}</kbd>
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+      <div class="help-tip">
+        <p><strong>地图页</strong>：滚轮缩放、拖拽平移、双击放大；点击车辆弹出操作条，点击站点可设为起点/终点。</p>
+        <p><strong>任务页</strong>：地图选点向导（选车 → 点起点 → 点终点 → 确认），3~4 次点击完成。</p>
+        <p><strong>编辑页</strong>：1–4 切换工具，左键拖拽连续绘制，空格/右键拖拽平移，Ctrl+Z / Ctrl+Shift+Z 撤销重做。</p>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -537,6 +585,20 @@ onUnmounted(() => {
   padding: 28px 36px 48px;
 }
 
+.content.flush {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.main-flush {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .icon-btn {
   display: inline-flex;
   align-items: center;
@@ -559,6 +621,95 @@ onUnmounted(() => {
 
 .scrim {
   display: none;
+}
+
+/* ------------------------------ 快捷键帮助 ------------------------------ */
+
+.help-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--surface-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-card-hover);
+  color: var(--text-secondary);
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.help-fab:hover {
+  transform: translateY(-1px);
+  color: var(--accent);
+}
+
+.help-fab-key {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+.help-intro {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.help-intro kbd,
+.shortcut-row kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--separator);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.help-tip {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.help-tip strong {
+  color: var(--text);
 }
 
 /* ------------------------------ 响应式 ------------------------------ */

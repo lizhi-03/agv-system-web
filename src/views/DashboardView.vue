@@ -4,19 +4,20 @@ import { useRouter } from 'vue-router'
 import AgvMapCanvas from '../components/AgvMapCanvas.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppCard from '../components/ui/AppCard.vue'
+import AppTooltip from '../components/ui/AppTooltip.vue'
 import BatteryBar from '../components/ui/BatteryBar.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 import SkeletonBlock from '../components/ui/SkeletonBlock.vue'
 import StatCard from '../components/ui/StatCard.vue'
 import StatusPill from '../components/ui/StatusPill.vue'
-import { listAgv } from '../api/agv'
+import { liveStatus } from '../api/live'
 import { pageLogs } from '../api/log'
-import { getCurrentMap } from '../api/map'
 import { pageTasks } from '../api/task'
 import { useBackendStatus } from '../composables/useBackendStatus'
+import { useLiveState } from '../composables/useLiveState'
 import { usePolling } from '../composables/usePolling'
-import type { AgvLog, AgvMap, AgvSnapshot, AgvTask } from '../types'
+import type { AgvLog, AgvTask, Station } from '../types'
 import { agvColor } from '../utils/colors'
 import {
   batteryTone,
@@ -27,36 +28,31 @@ import {
   type Tone,
 } from '../utils/labels'
 
+interface DashMapApi {
+  zoomIn: () => void
+  zoomOut: () => void
+  fit: () => void
+}
+
 const router = useRouter()
 const { status } = useBackendStatus()
 
-const mapData = ref<AgvMap | null>(null)
-const agvs = ref<AgvSnapshot[]>([])
+const live = useLiveState({ runningInterval: 1000, idleInterval: 5000 })
+const mapData = live.mapData
+const agvs = live.agvs
+const coreError = live.errorText
+const booting = computed(() => !live.booted.value)
+const lastUpdated = live.lastSync
+
 const taskTotal = ref(0)
 const taskRecords = ref<AgvTask[]>([])
 const logs = ref<AgvLog[]>([])
-const coreError = ref('')
 const taskError = ref('')
 const logError = ref('')
-const booting = ref(true)
 const tasksLoaded = ref(false)
 const logsLoaded = ref(false)
-const lastUpdated = ref<number | null>(null)
-
-async function loadCore(): Promise<void> {
-  try {
-    const [map, cars] = await Promise.all([getCurrentMap(true), listAgv(true)])
-    mapData.value = map
-    agvs.value = cars
-    coreError.value = ''
-    lastUpdated.value = Date.now()
-  } catch (error) {
-    coreError.value = error instanceof Error ? error.message : '地图与车辆加载失败'
-    throw error
-  } finally {
-    booting.value = false
-  }
-}
+const dashMapRef = ref<DashMapApi | null>(null)
+const zoomPercent = ref(100)
 
 async function loadTasks(): Promise<void> {
   try {
@@ -83,18 +79,38 @@ async function loadLogs(): Promise<void> {
   }
 }
 
-const corePoller = usePolling(loadCore, { interval: 1000 })
 const taskPoller = usePolling(loadTasks, { interval: 5000 })
 const logPoller = usePolling(loadLogs, { interval: 5000 })
-
-const { refresh: refreshCore, inFlight: coreInFlight } = corePoller
 const { refresh: refreshTasks } = taskPoller
 const { refresh: refreshLogs } = logPoller
 
+const dataSourceText = computed(() => {
+  switch (liveStatus.mode) {
+    case 'stream':
+      return '实时推送'
+    case 'poll':
+      return '轮询 1s / 5s 自适应'
+    case 'list':
+      return '轮询（兼容接口）'
+    default:
+      return '连接中'
+  }
+})
+
+const lastSyncText = computed(() => (liveStatus.lastAt ? formatClock(liveStatus.lastAt) : '—'))
+
 function refreshAll(): void {
-  void refreshCore()
+  live.refresh()
   void refreshTasks()
   void refreshLogs()
+}
+
+function goMapAgv(payload: { code: string }): void {
+  void router.push({ path: '/map', query: { agv: payload.code } })
+}
+
+function goTaskStation(payload: { station: Station }): void {
+  void router.push({ path: '/task', query: { wizard: '1', start: payload.station.id } })
 }
 
 const stats = computed(() => {
@@ -188,7 +204,7 @@ const errorDescription = computed(() => {
       <Icon name="map" :size="14" />
       实时地图
     </AppButton>
-    <AppButton size="sm" variant="primary" :loading="coreInFlight" @click="refreshAll">
+    <AppButton size="sm" variant="primary" @click="refreshAll">
       <Icon name="refresh" :size="14" />
       刷新
     </AppButton>
@@ -201,7 +217,7 @@ const errorDescription = computed(() => {
       </div>
       <div class="dash-grid">
         <div class="dash-main">
-          <SkeletonBlock height="376px" radius="20px" />
+          <SkeletonBlock height="520px" radius="20px" />
           <SkeletonBlock height="280px" radius="20px" />
         </div>
         <div class="dash-side">
@@ -231,7 +247,7 @@ const errorDescription = computed(() => {
           unit="辆"
           icon="agv"
           tone="blue"
-          hint="来自 POST /agv/list"
+          hint="来自 /agv/live 实时快照"
         />
         <StatCard
           label="运行中"
@@ -286,11 +302,32 @@ const errorDescription = computed(() => {
             </template>
             <div class="mini-map">
               <AgvMapCanvas
+                ref="dashMapRef"
                 :map="mapData"
                 :agvs="agvs"
                 empty-text="暂未获取到当前地图"
-                @select-agv="router.push('/map')"
+                @agv-click="goMapAgv"
+                @station-click="goTaskStation"
+                @viewport-change="zoomPercent = $event.percent"
               />
+              <div class="mini-controls glass">
+                <button type="button" class="mini-zoom" aria-label="缩小" @click="dashMapRef?.zoomOut()">
+                  <Icon name="minus" :size="14" />
+                </button>
+                <span class="num">{{ zoomPercent }}%</span>
+                <button type="button" class="mini-zoom" aria-label="放大" @click="dashMapRef?.zoomIn()">
+                  <Icon name="plus" :size="14" />
+                </button>
+                <AppTooltip content="适应窗口">
+                  <button type="button" class="mini-zoom" aria-label="适应窗口" @click="dashMapRef?.fit()">
+                    <Icon name="expand" :size="14" />
+                  </button>
+                </AppTooltip>
+              </div>
+              <div class="mini-hint glass">
+                <Icon name="info" :size="12" />
+                点击车辆/站点可直接操作
+              </div>
             </div>
           </AppCard>
 
@@ -407,6 +444,14 @@ const errorDescription = computed(() => {
           </div>
           <div class="map-strip-spacer" />
           <div class="map-strip-item">
+            <span class="map-strip-label">数据通道</span>
+            <span class="map-strip-value">{{ dataSourceText }}</span>
+          </div>
+          <div class="map-strip-item">
+            <span class="map-strip-label">最后同步</span>
+            <span class="map-strip-value num">{{ lastSyncText }}</span>
+          </div>
+          <div class="map-strip-item">
             <span class="map-strip-label">后端服务</span>
             <span class="map-strip-value service-state" :data-state="status.reachable ? 'online' : 'offline'">
               <i class="service-dot" />
@@ -445,8 +490,8 @@ const errorDescription = computed(() => {
 
 .dash-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(320px, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 14px;
   align-items: start;
 }
 
@@ -459,8 +504,68 @@ const errorDescription = computed(() => {
 }
 
 .mini-map {
-  height: 300px;
+  position: relative;
+  height: 460px;
   padding: 0 14px 14px;
+}
+
+.mini-controls {
+  position: absolute;
+  top: 12px;
+  right: 26px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-card);
+}
+
+.mini-controls span {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mini-zoom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+
+.mini-zoom:hover {
+  background: var(--surface-subtle);
+  color: var(--accent);
+}
+
+.mini-hint {
+  position: absolute;
+  left: 26px;
+  bottom: 24px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-border);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+}
+
+.glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
 .car-list {

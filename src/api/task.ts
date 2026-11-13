@@ -27,8 +27,15 @@ function normalizeTask(raw: Partial<AgvTask> | null | undefined): AgvTask {
 
 /** 服务端分页（page 从 1 开始，仅支持 taskCode 模糊过滤） */
 export function pageTasks(query: TaskQuery, quiet = false): Promise<PageResult<AgvTask>> {
+  const data: Record<string, unknown> = {
+    page: query.page,
+    pageSize: query.pageSize,
+  }
+  if (query.taskCode) data.taskCode = query.taskCode
+  if (query.status) data.status = query.status
+  if (query.agvCode) data.agvCode = query.agvCode
   return request<PageResult<AgvTask> | null>(
-    { url: '/task/page', method: 'post', data: query },
+    { url: '/task/page', method: 'post', data },
     quiet,
   ).then((page) => ({
     total: toNumber(page?.total),

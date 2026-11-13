@@ -317,15 +317,24 @@ function draw(): void {
     }
   }
 
-  // 车辆
+  // 车辆（同格多车轻微错位，避免完全重叠）
   if (props.showVehicles) {
+    const groups = new Map<string, AgvSnapshot[]>()
     for (const agv of props.agvs) {
       if (!insideBoard(agv.x, agv.y)) continue
-      const color = agvColor(agv.agvCode)
-      const { px, py } = cellTopLeft(agv.x, agv.y)
-      const cx = px + cell / 2
-      const cy = py + cell / 2
-      const selected = props.selectedCode === agv.agvCode
+      const key = `${agv.x},${agv.y}`
+      const list = groups.get(key)
+      if (list) list.push(agv)
+      else groups.set(key, [agv])
+    }
+    for (const list of groups.values()) {
+      list.forEach((agv, index) => {
+        const color = agvColor(agv.agvCode)
+        const { px, py } = cellTopLeft(agv.x, agv.y)
+        const offsetX = list.length > 1 ? (index - (list.length - 1) / 2) * cell * 0.32 : 0
+        const cx = px + cell / 2 + offsetX
+        const cy = py + cell / 2
+        const selected = props.selectedCode === agv.agvCode
       const bodyLength = Math.max(8, cell * 0.72)
       const bodyWidth = Math.max(6, cell * 0.44)
       const angle = headingFor(agv)
@@ -360,9 +369,10 @@ function draw(): void {
       ctx.fill()
       ctx.restore()
 
-      if (props.showLabels && cell >= 13) {
-        drawTagLabel(ctx, agv.agvCode, cx, py - Math.max(2, cell * 0.1), cell)
-      }
+        if (props.showLabels && cell >= 13) {
+          drawTagLabel(ctx, agv.agvCode, cx, py - Math.max(2, cell * 0.1), cell)
+        }
+      })
     }
   }
 }

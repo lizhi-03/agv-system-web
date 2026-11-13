@@ -63,11 +63,11 @@ export async function request<T>(config: AxiosRequestConfig, quiet = false): Pro
         message =
           error.code === 'ECONNABORTED'
             ? '请求超时，后端响应过慢'
-            : '无法连接后端服务，请确认 gateway(8080) 与 service-agv(8000) 已启动'
+            : '无法连接后端服务，请确认后端已启动'
         reportUnreachable(message)
       } else if (status === 502 || status === 503 || status === 504 || typeof rawData === 'string') {
         // 开发代理连不上网关、或网关无可用实例时返回的 HTML/文本错误
-        message = `无法连接后端服务（HTTP ${status}），请确认 gateway(8080) 与 service-agv(8000) 已启动`
+        message = '无法连接后端服务，请确认后端已启动'
         reportUnreachable(message)
       } else {
         message = body?.msg || body?.message || `请求失败（HTTP ${status}）`

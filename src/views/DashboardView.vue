@@ -123,6 +123,11 @@ const topAgvs = computed(() =>
   [...agvs.value].sort((a, b) => a.agvCode.localeCompare(b.agvCode)).slice(0, 6),
 )
 
+const carSubtitle = computed(() => {
+  const total = agvs.value.length
+  return total > 6 ? `共 ${total} 辆车，显示前 ${topAgvs.value.length} 条` : `共 ${total} 辆车`
+})
+
 const mapMeta = computed(() => {
   const map = mapData.value
   if (!map) return null
@@ -289,7 +294,7 @@ const errorDescription = computed(() => {
             </div>
           </AppCard>
 
-          <AppCard title="车辆状态" :subtitle="`共 ${agvs.length} 辆车，显示前 ${topAgvs.length} 条`">
+          <AppCard title="车辆状态" :subtitle="carSubtitle">
             <template #actions>
               <AppButton v-if="agvs.length > 6" size="sm" variant="ghost" @click="router.push('/agv')">
                 查看全部

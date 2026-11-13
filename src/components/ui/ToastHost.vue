@@ -39,7 +39,7 @@ const toneIcon: Record<ToastTone, string> = {
 <style scoped>
 .toast-host {
   position: fixed;
-  top: 18px;
+  top: calc(var(--topbar-h) + 16px);
   right: 18px;
   z-index: 3000;
   display: flex;
@@ -61,7 +61,7 @@ const toneIcon: Record<ToastTone, string> = {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-card-hover);
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .toast-icon {
@@ -121,6 +121,7 @@ const toneIcon: Record<ToastTone, string> = {
   border-radius: 50%;
   color: var(--text-tertiary);
   flex: none;
+  pointer-events: auto;
 }
 
 .toast-close:hover {

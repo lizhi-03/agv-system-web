@@ -8,6 +8,7 @@ import AppPagination from '../components/ui/AppPagination.vue'
 import AppSelect from '../components/ui/AppSelect.vue'
 import AppSwitch from '../components/ui/AppSwitch.vue'
 import AppTable from '../components/ui/AppTable.vue'
+import AppTooltip from '../components/ui/AppTooltip.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 import SkeletonBlock from '../components/ui/SkeletonBlock.vue'
@@ -299,7 +300,18 @@ const canCancel = (row: AgvTask): boolean =>
       </EmptyState>
 
       <template v-else>
-        <AppTable>
+        <AppTable table-class="task-table">
+          <colgroup>
+            <col style="width: 6%" />
+            <col style="width: 17%" />
+            <col style="width: 9%" />
+            <col style="width: 8%" />
+            <col style="width: 9%" />
+            <col style="width: 8%" />
+            <col style="width: 18%" />
+            <col style="width: 15%" />
+            <col style="width: 10%" />
+          </colgroup>
           <thead>
             <tr>
               <th>ID</th>
@@ -329,9 +341,7 @@ const canCancel = (row: AgvTask): boolean =>
               <td class="muted nowrap">{{ formatTime(task.startTime) }}</td>
               <td>
                 <div class="cell-actions">
-                  <span
-                    :data-tip="canCancel(task) ? '' : '已完成 / 已取消 / 失败的任务不可取消'"
-                  >
+                  <AppTooltip :content="canCancel(task) ? '' : '已完成 / 已取消 / 失败的任务不可取消'">
                     <AppButton
                       size="sm"
                       variant="secondary"
@@ -340,7 +350,7 @@ const canCancel = (row: AgvTask): boolean =>
                     >
                       取消
                     </AppButton>
-                  </span>
+                  </AppTooltip>
                 </div>
               </td>
             </tr>
@@ -461,9 +471,47 @@ const canCancel = (row: AgvTask): boolean =>
   font-weight: 500;
   font-size: 12.5px;
   white-space: nowrap;
-  max-width: 190px;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 固定表格布局：1440 宽下所有列完整可见，不产生表格内部横向滚动 */
+:deep(.task-table) {
+  table-layout: fixed;
+  width: 100%;
+}
+
+:deep(.task-table th),
+:deep(.task-table td) {
+  padding: 11px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.task-table .route-cell) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+:deep(.task-table .route-cell > span) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.task-table .cell-actions) {
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  :deep(.task-table) {
+    min-width: 680px;
+  }
 }
 
 .nowrap {

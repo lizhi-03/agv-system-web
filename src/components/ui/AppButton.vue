@@ -54,7 +54,11 @@ defineEmits<{ click: [event: MouseEvent] }>()
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  background: var(--surface-subtle);
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  filter: grayscale(1);
+  box-shadow: none;
   cursor: not-allowed;
 }
 

@@ -36,6 +36,8 @@
   --accent-hover: #0077ed;
   --accent-tint: rgba(0, 113, 227, 0.1);
   --accent-ring: rgba(0, 113, 227, 0.22);
+  --brand-gradient-from: #0071e3;
+  --brand-gradient-to: #5ac8fa;
 
   --green: #34c759;
   --green-text: #248a3d;
@@ -117,6 +119,8 @@
   --accent-hover: #2f95ff;
   --accent-tint: rgba(10, 132, 255, 0.18);
   --accent-ring: rgba(10, 132, 255, 0.32);
+  --brand-gradient-from: #0a84ff;
+  --brand-gradient-to: #64d2ff;
 
   --green: #30d158;
   --green-text: #30d158;

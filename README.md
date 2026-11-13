@@ -58,12 +58,10 @@ src/
 
 ### 1. 后端（真实数据来源）
 
-后端仓库为 Spring Cloud 工程，需要：
+后端为 Spring Cloud 工程，前端只依赖网关暴露的 **`http://localhost:8080/api`**：
 
-- `service-agv`：`http://localhost:8000`
-- `gateway`：`http://localhost:8080`（前端统一经 `/api` 访问网关，网关 RewritePath 去掉 `/api`）
-
-数据库需初始化 `agv_system` 库及 5 张表，并写入一份 `is_current=1` 的种子地图（含 obstacles / stations，建议包含 `type=charge` 充电站），否则 `/map/current` 返回空、`/agv/path` 与 `/agv/charge` 会失败。
+- 网关（gateway）监听 `8080`，由它把 `/api/**` 转发到内部业务服务（内部服务端口属于实现细节，以实际部署为准；本机验证时业务服务运行在 18000，由网关内部转发，前端不感知也不直连）。
+- 数据库需初始化 `agv_system` 库及 5 张表，并写入一份 `is_current=1` 的种子地图（含 obstacles / stations，建议包含 `type=charge` 充电站），否则 `/map/current` 返回空、`/agv/path` 与 `/agv/charge` 会失败。
 
 ### 2. 前端
 
@@ -94,12 +92,12 @@ VITE_API_BASE=https://example.com/api npm run build
 | --- | --- | --- |
 | 1 | `POST /agv/list` | 概览 / 实时地图 / 车队轮询；新建任务弹窗车辆下拉 |
 | 2 | `GET /agv/{agvCode}` | 车队页点击表格行 → 车辆详情抽屉（路径点数、pathIndex、agvPaths 等） |
-| 3 | `POST /agv/batch/{n}` | 车队页工具栏「批量加车」（1..20，二次确认，提示编号规则） |
+| 3 | `POST /agv/batch/{n}` | 车队页工具栏「批量加车」（1..20，二次确认 + 按钮防抖，提示编号规则与 batch 车 idle 行为） |
 | 4 | `POST /agv/charge/{agvCode}` | 车队页行操作「充电」 |
-| 5 | `POST /agv/report` | 车队页行操作「上报」→ X/Y 表单，提交时回传完整快照 |
+| 5 | `POST /agv/report` | 车队页行操作「上报」→ X/Y 表单，只提交坐标（后端合并语义保留任务/路径；也兼容完整快照） |
 | 6 | `POST /agv/path` | 任务页「新建任务」→ 车辆 + 起点 + 终点，展示 当前位→起点→终点 预览 |
-| 7 | `POST /agv/stop` | 车队页行操作「暂停」（无 taskId 时禁用并 tooltip） |
-| 8 | `POST /agv/start` | 车队页行操作「启动」（无 taskId 时禁用并 tooltip） |
+| 7 | `POST /agv/stop` | 车队页行操作「暂停」（仅运行中且有任务可点，否则禁用并提示原因） |
+| 8 | `POST /agv/start` | 车队页行操作「启动」（仅已暂停且有任务可点，否则禁用并提示原因） |
 | 9 | `POST /agv/speed` | 车队页行操作「调速」→ 滑块 + 预设 50/100/150/200/300 |
 | 10 | `POST /agv/clear` | 任务页「清空全部任务」（危险操作二次确认） |
 | 11 | `GET /map/current` | 概览小地图、实时地图、地图编辑加载 |
@@ -125,7 +123,7 @@ VITE_API_BASE=https://example.com/api npm run build
 
 ## 设计系统摘要
 
-- 背景 `#f5f5f7`、表面 `#fff`、主色 `#0071e3`；深色背景 `#000`、表面 `#1c1c1e`，随系统或手动手动切换并持久化
+- 背景 `#f5f5f7`、表面 `#fff`、主色 `#0071e3`；深色背景 `#000`、表面 `#1c1c1e`，随系统或手动切换并持久化
 - 卡片圆角 20px、控件 14px、胶囊按钮；阴影 `0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06)`
 - 侧栏 240px 毛玻璃（`blur(24px) saturate(180%)`），≤1080px 收窄为 76px 图标栏，≤768px 抽屉化
 - 字体 `-apple-system / SF Pro / PingFang SC`，数字 `tabular-nums`；尊重 `prefers-reduced-motion`
@@ -137,10 +135,12 @@ VITE_API_BASE=https://example.com/api npm run build
 
 1. 后端 `/task/page` 仅支持 `taskCode` 模糊过滤，无状态/时间过滤；概览的任务状态分布基于首页 100 条样本（README 与 UI 均已标注）。
 2. 后端 `/log/page` 无过滤参数，日志页的级别/关键字筛选仅作用于当前页数据。
-3. `/map/save` 返回 `data: null`，保存后需再请求 `/map/current` 获取新版本号；后端保存时不落 `description` 字段。
-4. 车辆无 `taskId` 时后端 `/agv/start`、`/agv/stop` 会因空指针返回 500，前端已禁用按钮并给出 tooltip。
+3. `/map/save` 返回 `data: null`，保存后需再请求 `/map/current` 获取新版本号（后端会生成新 `mapId` / `version`）。
+4. 车辆无 `taskId` 时后端 `/agv/start`、`/agv/stop` 返回业务提示（HTTP 200 / code=204 + msg），前端按状态禁用按钮并展示原因。
 5. `/agv/charge` 依赖当前地图存在 `type=charge` 站点，地图无充电站时后端会异常，前端展示后端错误文案。
-6. `/agv/report` 的后端更新语句会无条件写入 `task_id` 与 `planned_path`，因此前端提交时会回传完整车辆快照。
-7. `/agv/batch/{n}` 每次调用固定从 `AGVplus0001` 开始生成编号，重复调用会产生重复编号车辆。
-8. 地图编辑保存沿用当前地图宽高（不提供尺寸修改）；障碍与站点互斥、同格站点唯一；撤销历史为客户端栈（最多 30 步）。
-9. 无鉴权，仅适用于内网演示环境。
+6. `/agv/report` 后端为合并语义：只提交 `agvCode/x/y` 即可，未提交的 `taskId/plannedPath/pathIndex/description/isCharge` 自动保留；前端按此实现，运行中车辆上报安全（接口也兼容完整快照）。
+7. `/agv/batch/{n}` 每次调用固定从 `AGVplus0001` 开始生成编号，重复调用会产生重复编号车辆；当已有 `AGVplus0001..0003` 时，需一次添加 ≥4 辆才会出现新编号 `AGVplus0004`。batch 新车会被内存模拟器持续写回 idle@(0,0)，暂不能稳定执行任务（UI 已提示，不引导派任务）。
+8. 空闲车辆的速度会被后端模拟器在 1s 内重置为 0，调速请在实际运行中的车辆上进行（UI 已给出提示）。
+9. 地图编辑保存沿用当前地图宽高（不提供尺寸修改）；障碍与站点互斥、同格站点唯一；撤销历史为客户端栈（最多 30 步）。
+10. 后端模拟器语义：运行中车辆「上报」的坐标可能被下一次 tick 按规划路径覆盖（属模拟器行为）；满电车辆发起充电会瞬间完成；batch 新车的 idle@(0,0) 回写见第 7 条。
+11. 无鉴权，仅适用于内网演示环境。

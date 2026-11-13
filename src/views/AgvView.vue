@@ -10,6 +10,7 @@ import AppSegmented from '../components/ui/AppSegmented.vue'
 import AppSlider from '../components/ui/AppSlider.vue'
 import AppSwitch from '../components/ui/AppSwitch.vue'
 import AppTable from '../components/ui/AppTable.vue'
+import AppTooltip from '../components/ui/AppTooltip.vue'
 import BatteryBar from '../components/ui/BatteryBar.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
@@ -28,7 +29,7 @@ import {
 import { confirmDialog } from '../composables/useConfirm'
 import { usePolling } from '../composables/usePolling'
 import { toast } from '../composables/useToast'
-import type { AgvSnapshot, ReportAgvPayload } from '../types'
+import type { AgvSnapshot } from '../types'
 import { agvColor } from '../utils/colors'
 import { formatTime } from '../utils/labels'
 
@@ -38,6 +39,7 @@ const errorText = ref('')
 const search = ref('')
 const statusFilter = ref('all')
 const batchCount = ref(1)
+const batchBusy = ref(false)
 const actionKey = ref<string | null>(null)
 
 const speedOpen = ref(false)
@@ -111,30 +113,71 @@ async function runAction(
 }
 
 async function addCars(): Promise<void> {
-  const count = batchCount.value
-  const lastCode = `AGVplus${String(count).padStart(4, '0')}`
-  const confirmed = await confirmDialog({
-    title: '批量加车',
-    message: `将新增 ${count} 辆车，编号固定为 AGVplus0001 ~ ${lastCode}。`,
-    detail:
-      '后端每次调用都从 AGVplus0001 开始生成固定编号；若之前添加过相同编号，列表会出现重复编号车辆。',
-    confirmLabel: '确认添加',
-  })
-  if (!confirmed) return
-  await runAction('batch', () => batchAgv(count), `已添加 ${count} 辆车（AGVplus0001 ~ ${lastCode}）`)
+  // 防抖：确认弹窗 + 请求期间禁止重复触发，避免重复叠加模拟器定时任务
+  if (batchBusy.value || actionKey.value) return
+  batchBusy.value = true
+  try {
+    const count = batchCount.value
+    const lastCode = `AGVplus${String(count).padStart(4, '0')}`
+    const confirmed = await confirmDialog({
+      title: '批量加车',
+      message: `将新增 ${count} 辆车，编号固定为 AGVplus0001 ~ ${lastCode}。`,
+      detail:
+        '后端每次调用都从 AGVplus0001 开始生成固定编号；若之前添加过相同编号，列表会出现重复编号车辆。batch 车辆由内存模拟器维持 idle@(0,0)，暂不支持稳定执行任务。',
+      confirmLabel: '确认添加',
+    })
+    if (!confirmed) return
+    actionKey.value = 'batch'
+    try {
+      await batchAgv(count)
+      toast.success(`已添加 ${count} 辆车`, `AGVplus0001 ~ ${lastCode}（由模拟器维持 idle，建议暂不派发任务）`)
+      await load().catch(() => {})
+    } catch {
+      /* http 层已提示 */
+    } finally {
+      actionKey.value = null
+    }
+  } finally {
+    batchBusy.value = false
+  }
 }
 
-function needTask(car: AgvSnapshot): boolean {
-  return car.taskId !== null
+function startBlockReason(car: AgvSnapshot): string {
+  if (car.taskId === null) return '该车辆当前没有任务，无法启动'
+  if (car.status === 'running') return '车辆正在运行中，无需启动'
+  if (car.status !== 'stopping') return '仅已暂停（stopping）车辆可启动'
+  return ''
+}
+
+function stopBlockReason(car: AgvSnapshot): string {
+  if (car.taskId === null) return '该车辆当前没有任务，无法暂停'
+  if (car.status !== 'running') return '仅运行中车辆可暂停'
+  return ''
+}
+
+function canStart(car: AgvSnapshot): boolean {
+  return startBlockReason(car) === ''
+}
+
+function canStop(car: AgvSnapshot): boolean {
+  return stopBlockReason(car) === ''
 }
 
 function onStart(car: AgvSnapshot): void {
-  if (!needTask(car)) return
+  const reason = startBlockReason(car)
+  if (reason) {
+    toast.warning(reason)
+    return
+  }
   void runAction(`start:${car.agvCode}`, () => startAgv({ agvCode: car.agvCode }), `${car.agvCode} 已恢复运行`)
 }
 
 function onStop(car: AgvSnapshot): void {
-  if (!needTask(car)) return
+  const reason = stopBlockReason(car)
+  if (reason) {
+    toast.warning(reason)
+    return
+  }
   void runAction(`stop:${car.agvCode}`, () => stopAgv({ agvCode: car.agvCode }), `${car.agvCode} 已暂停`)
 }
 
@@ -176,32 +219,18 @@ function openReport(car: AgvSnapshot): void {
   reportOpen.value = true
 }
 
-function buildReportPayload(car: AgvSnapshot): ReportAgvPayload {
-  return {
-    agvCode: car.agvCode,
-    x: Math.round(reportX.value),
-    y: Math.round(reportY.value),
-    direction: car.direction,
-    status: car.status,
-    battery: car.battery,
-    speed: car.speed,
-    taskId: car.taskId,
-    plannedPath: car.plannedPath,
-    pathIndex: car.pathIndex,
-    agvPaths: car.agvPaths,
-    description: car.description,
-    isCharge: car.isCharge,
-    lastUpdate: car.lastUpdate,
-  }
-}
-
 async function saveReport(): Promise<void> {
   const car = current.value
   if (!car) return
   if (actionKey.value) return
   actionKey.value = 'report'
   try {
-    await reportAgv(buildReportPayload(car))
+    // 后端为合并语义：只提交坐标即可，taskId / plannedPath 等任务字段自动保留
+    await reportAgv({
+      agvCode: car.agvCode,
+      x: Math.round(reportX.value),
+      y: Math.round(reportY.value),
+    })
     toast.success('位置已上报', `(${Math.round(reportX.value)}, ${Math.round(reportY.value)})`)
     reportOpen.value = false
     await load().catch(() => {})
@@ -228,11 +257,7 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
 
 <template>
   <Teleport to="#topbar-actions" defer>
-    <AppButton size="sm" variant="primary" :loading="actionKey === 'batch'" @click="addCars">
-      <Icon name="plus" :size="14" />
-      批量加车
-    </AppButton>
-    <AppButton size="sm" variant="secondary" :loading="inFlight" @click="refresh">
+    <AppButton size="sm" variant="primary" :loading="inFlight" @click="refresh">
       <Icon name="refresh" :size="14" />
       刷新
     </AppButton>
@@ -256,7 +281,8 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
         <AppButton
           size="sm"
           variant="primary"
-          :disabled="busy"
+          :loading="batchBusy || actionKey === 'batch'"
+          :disabled="busy || batchBusy"
           @click="addCars"
         >
           <Icon name="plus" :size="14" />
@@ -276,10 +302,6 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
           <Icon name="alert" :size="13" />
           {{ errorText }}
         </span>
-        <AppButton size="sm" variant="secondary" :loading="inFlight" @click="refresh">
-          <Icon name="refresh" :size="13" />
-          刷新
-        </AppButton>
       </template>
 
       <div v-if="loading && !agvs.length" class="table-skeleton">
@@ -351,47 +373,44 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
             <td class="muted nowrap">{{ formatTime(car.lastUpdate) }}</td>
             <td>
               <div class="cell-actions" @click.stop>
-                <span
-                  :data-tip="
-                    car.taskId === null ? '车辆当前无任务，后端会返回 500，已禁用' : '恢复任务运行'
-                  "
-                >
+                <AppTooltip :content="startBlockReason(car)">
                   <AppButton
                     size="sm"
                     variant="tint"
-                    :disabled="busy || car.taskId === null"
+                    :disabled="busy || !canStart(car)"
                     @click="onStart(car)"
                   >
                     启动
                   </AppButton>
-                </span>
-                <span
-                  :data-tip="
-                    car.taskId === null ? '车辆当前无任务，后端会返回 500，已禁用' : '暂停任务运行'
-                  "
-                >
+                </AppTooltip>
+                <AppTooltip :content="stopBlockReason(car)">
                   <AppButton
                     size="sm"
                     variant="secondary"
-                    :disabled="busy || car.taskId === null"
+                    :disabled="busy || !canStop(car)"
                     @click="onStop(car)"
                   >
                     暂停
                   </AppButton>
-                </span>
+                </AppTooltip>
                 <AppButton size="sm" variant="secondary" :disabled="busy" @click="openSpeed(car)">
                   调速
                 </AppButton>
-                <span class="tip-wrap" data-tip="前往最近充电站（地图需有 charge 站点）">
+                <AppTooltip content="前往最近充电站（地图需有 charge 站点）">
                   <AppButton size="sm" variant="secondary" :disabled="busy" @click="onCharge(car)">
                     充电
                   </AppButton>
-                </span>
-                <span class="tip-wrap" data-tip="上报位置（会回传完整快照，避免清空任务）">
-                  <AppButton size="sm" variant="secondary" :disabled="busy" @click="openReport(car)">
+                </AppTooltip>
+                <AppTooltip content="仅提交坐标（后端合并语义，任务字段自动保留）">
+                  <AppButton
+                    size="sm"
+                    variant="secondary"
+                    :disabled="busy"
+                    @click="openReport(car)"
+                  >
                     上报
                   </AppButton>
-                </span>
+                </AppTooltip>
               </div>
             </td>
           </tr>
@@ -427,6 +446,9 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
         </AppButton>
       </div>
       <p class="field-hint">速度范围 0 ~ 1000 cm/s，保存后会立即下发到后端。</p>
+      <p v-if="current && current.taskId === null" class="field-hint warning-hint">
+        空闲车辆的速度会被后端模拟器在 1s 内重置为 0，建议在运行中车辆上调速。
+      </p>
     </div>
   </AppModal>
 
@@ -451,8 +473,8 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
         </label>
       </div>
       <p class="field-hint">
-        提交时会回传当前车辆的完整快照（taskId / plannedPath / status / battery / speed / direction /
-        description / isCharge），避免后端无条件下写 task_id 与 planned_path 时清空任务。
+        后端为合并语义：仅提交坐标，车辆的 taskId / plannedPath / pathIndex / description /
+        isCharge 等任务字段会自动保留，运行中车辆上报不会清空任务。
       </p>
     </div>
   </AppModal>
@@ -614,6 +636,10 @@ async function openDetail(car: AgvSnapshot): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.warning-hint {
+  color: var(--orange-text);
 }
 
 .speed-value {

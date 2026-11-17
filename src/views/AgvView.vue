@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppButton from '../components/ui/AppButton.vue'
 import AppDrawer from '../components/ui/AppDrawer.vue'
@@ -15,10 +15,10 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 import SkeletonBlock from '../components/ui/SkeletonBlock.vue'
 import StatusPill from '../components/ui/StatusPill.vue'
-import { batchAgv, getAgv, listAgv, reportAgv } from '../api/agv'
+import { batchAgv, getAgv, reportAgv } from '../api/agv'
 import { confirmDialog } from '../composables/useConfirm'
 import { useAgvCommand } from '../composables/useAgvCommand'
-import { usePolling } from '../composables/usePolling'
+import { useLiveState } from '../composables/useLiveState'
 import { toast } from '../composables/useToast'
 import type { AgvSnapshot } from '../types'
 import { agvColor } from '../utils/colors'
@@ -27,9 +27,11 @@ import { formatTime } from '../utils/labels'
 
 const router = useRouter()
 
-const agvs = ref<AgvSnapshot[]>([])
-const loading = ref(true)
-const errorText = ref('')
+// 与概览/地图页共用同一实时通道（SSE 优先，降级自适应轮询），不再单独 2s 轮询 /agv/list
+const live = useLiveState({ runningInterval: 1000, idleInterval: 5000, withMap: false })
+const agvs = live.agvs
+const errorText = live.errorText
+const loading = computed(() => !live.booted.value)
 const search = ref('')
 const statusFilter = ref('all')
 const batchCount = ref(1)
@@ -48,22 +50,16 @@ const reportX = ref(0)
 const reportY = ref(0)
 const current = ref<AgvSnapshot | null>(null)
 
-const command = useAgvCommand(() => load())
+const refresh = (): Promise<void> => live.refresh()
+const command = useAgvCommand(refresh)
 
-async function load(): Promise<void> {
-  try {
-    agvs.value = await listAgv(true)
-    errorText.value = ''
-  } catch (error) {
-    errorText.value = error instanceof Error ? error.message : '车辆列表加载失败'
-    throw error
-  } finally {
-    loading.value = false
-  }
-}
-
-const poller = usePolling(load, { interval: 2000 })
-const { running, refresh } = poller
+const running = computed({
+  get: () => !live.paused.value,
+  set: (value: boolean) => {
+    if (value) live.start()
+    else live.stop()
+  },
+})
 
 const filtered = computed(() => {
   const keyword = search.value.trim().toLowerCase()
@@ -190,7 +186,7 @@ async function addCars(): Promise<void> {
     })
     if (!confirmed) return
     const codes = await batchAgv(count)
-    await load().catch(() => {})
+    await refresh()
     if (codes.length) {
       newCodes.value = codes
       if (newCodeTimer) window.clearTimeout(newCodeTimer)
@@ -207,10 +203,6 @@ async function addCars(): Promise<void> {
     batchBusy.value = false
   }
 }
-
-onMounted(() => {
-  void load().catch(() => {})
-})
 
 onUnmounted(() => {
   if (newCodeTimer) window.clearTimeout(newCodeTimer)
@@ -255,7 +247,7 @@ onUnmounted(() => {
           批量加车
         </AppButton>
       </div>
-      <AppSwitch v-model="running" size="sm" label="自动刷新（2s）" />
+      <AppSwitch v-model="running" size="sm" label="实时更新" />
     </div>
 
     <div v-if="loading && !agvs.length" class="agv-grid">

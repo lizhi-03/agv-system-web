@@ -1,10 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import DashboardView from './views/DashboardView.vue'
-import MapView from './views/MapView.vue'
-import AgvView from './views/AgvView.vue'
-import TaskView from './views/TaskView.vue'
-import MapEditView from './views/MapEditView.vue'
-import LogView from './views/LogView.vue'
+
+// 路由级懒加载：每个页面独立 chunk，首屏只下载当前页面的代码
+const DashboardView = () => import('./views/DashboardView.vue')
+const MapView = () => import('./views/MapView.vue')
+const AgvView = () => import('./views/AgvView.vue')
+const TaskView = () => import('./views/TaskView.vue')
+const MapEditView = () => import('./views/MapEditView.vue')
+const LogView = () => import('./views/LogView.vue')
 
 export interface NavItem {
   path: string

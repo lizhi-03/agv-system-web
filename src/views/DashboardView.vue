@@ -100,7 +100,7 @@ const dataSourceText = computed(() => {
 const lastSyncText = computed(() => (liveStatus.lastAt ? formatClock(liveStatus.lastAt) : '—'))
 
 function refreshAll(): void {
-  live.refresh()
+  void live.refresh()
   void refreshTasks()
   void refreshLogs()
 }

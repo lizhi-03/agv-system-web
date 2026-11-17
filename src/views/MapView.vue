@@ -63,7 +63,7 @@ const running = computed({
     else live.stop()
   },
 })
-const refresh = (): void => live.refresh()
+const refresh = (): void => void live.refresh()
 const command = useAgvCommand(() => live.refresh())
 
 const dataSourceText = computed(() => {

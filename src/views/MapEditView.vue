@@ -8,12 +8,11 @@ import AppSegmented from '../components/ui/AppSegmented.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Icon from '../components/ui/Icon.vue'
 import SkeletonBlock from '../components/ui/SkeletonBlock.vue'
-import { listAgv } from '../api/agv'
 import { getCurrentMap, resetMap, saveMap } from '../api/map'
 import { confirmDialog } from '../composables/useConfirm'
-import { usePolling } from '../composables/usePolling'
+import { useLiveState } from '../composables/useLiveState'
 import { toast } from '../composables/useToast'
-import type { AgvMap, AgvSnapshot, Obstacle, Station } from '../types'
+import type { AgvMap, Obstacle, Station } from '../types'
 
 interface MapCanvasApi {
   zoomIn: () => void
@@ -31,7 +30,8 @@ interface EditorSnapshot {
 type Tool = 'obstacle' | 'station' | 'charge' | 'erase'
 
 const draft = ref<AgvMap | null>(null)
-const agvs = ref<AgvSnapshot[]>([])
+// 只读车辆位置：复用实时通道（SSE 优先），不再单独 3s 轮询 /agv/list
+const { agvs } = useLiveState({ withMap: false })
 const loading = ref(true)
 const saving = ref(false)
 const resetting = ref(false)
@@ -119,16 +119,6 @@ function applyLoadedMap(map: AgvMap | null): void {
   redoStack.value = []
   baselineKey.value = map ? keyOf(snapshot(map)) : ''
 }
-
-async function loadVehicles(): Promise<void> {
-  try {
-    agvs.value = await listAgv(true)
-  } catch {
-    /* 只读车辆信息，失败不打断编辑 */
-  }
-}
-
-usePolling(loadVehicles, { interval: 3000 })
 
 onMounted(() => {
   void loadMap()

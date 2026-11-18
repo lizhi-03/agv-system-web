@@ -1,6 +1,8 @@
+import axios from 'axios'
 import { reactive } from 'vue'
 import { listAgv, normalizeAgvList } from './agv'
 import { http } from './http'
+import { reportReachable, reportUnreachable } from './status'
 import type { AgvSnapshot } from '../types'
 
 export type LiveMode = 'idle' | 'poll' | 'list' | 'stream'
@@ -142,6 +144,7 @@ export async function fetchLiveFrame(
     liveStatus.lastAt = Date.now()
     return { notModified: false, frame }
   }
+  const startedAt = performance.now()
   try {
     const response = await http.request<unknown>({
       url: '/agv/live',
@@ -150,6 +153,8 @@ export async function fetchLiveFrame(
       validateStatus: (status) =>
         status === 200 || status === 304 || status === 404 || status === 405 || status === 501,
     })
+    // 只走实时通道的页面（地图/车队）也要让侧栏连接卡拿到可达性与延迟
+    reportReachable(performance.now() - startedAt)
     if (response.status === 304) {
       liveStatus.mode = 'poll'
       liveStatus.lastAt = Date.now()
@@ -196,6 +201,9 @@ export async function fetchLiveFrame(
     return { notModified: false, frame }
   } catch (error) {
     liveStatus.lastError = error instanceof Error ? error.message : '实时快照请求失败'
+    if (axios.isAxiosError(error) && !error.response) {
+      reportUnreachable('无法连接后端服务，请确认后端已启动')
+    }
     throw error
   }
 }

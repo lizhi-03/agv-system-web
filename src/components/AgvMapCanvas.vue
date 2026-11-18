@@ -862,6 +862,13 @@ watch(
     props.brushSize,
   ],
   scheduleDraw,
+)
+
+// 只有编辑器会原地修改地图（push/splice），才需要深度监听；
+// 实时页的数据每帧整体替换，浅比较即可，避免每帧遍历整份地图和车辆路径
+watch(
+  () => (props.interactive ? props.map : null),
+  scheduleDraw,
   { deep: true },
 )
 

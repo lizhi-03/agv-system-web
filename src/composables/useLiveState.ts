@@ -1,4 +1,4 @@
-import { onUnmounted, ref } from 'vue'
+import { onUnmounted, ref, shallowRef } from 'vue'
 import { connectStream, fetchLiveFrame, liveStatus, type LiveFrame } from '../api/live'
 import { getCurrentMap } from '../api/map'
 import type { AgvMap, AgvSnapshot } from '../types'
@@ -8,6 +8,8 @@ export interface LiveStateOptions {
   runningInterval?: number
   /** 全空闲时的轮询间隔（ms） */
   idleInterval?: number
+  /** 是否同步静态地图（默认 true；只需要车辆数据的页面传 false，省掉 /map/current） */
+  withMap?: boolean
 }
 
 /**
@@ -21,9 +23,11 @@ export interface LiveStateOptions {
 export function useLiveState(options: LiveStateOptions = {}) {
   const runningInterval = options.runningInterval ?? 1000
   const idleInterval = options.idleInterval ?? 5000
+  const withMap = options.withMap ?? true
 
-  const mapData = ref<AgvMap | null>(null)
-  const agvs = ref<AgvSnapshot[]>([])
+  // 每帧都是整体替换，不做原地修改：用 shallowRef 避免对整份快照（含规划路径）做深层代理
+  const mapData = shallowRef<AgvMap | null>(null)
+  const agvs = shallowRef<AgvSnapshot[]>([])
   const errorText = ref('')
   const booted = ref(false)
   const paused = ref(false)
@@ -79,6 +83,7 @@ export function useLiveState(options: LiveStateOptions = {}) {
   }
 
   async function ensureMap(version: number | null): Promise<void> {
+    if (!withMap) return
     const current = mapData.value
     if (current && (version == null || (current.version ?? 0) === version)) return
     try {
@@ -231,14 +236,13 @@ export function useLiveState(options: LiveStateOptions = {}) {
     }
   }
 
-  function refresh(): void {
+  /** 立即同步一次；返回的 Promise 在本次拉取结束后完成（失败不抛出，保持上一帧） */
+  function refresh(): Promise<void> {
     etag = null
     failures = 0
-    if (streamActive) {
-      void pullOnce()
-      return
-    }
-    schedulePoll(0)
+    if (streamActive) return pullOnce()
+    clearPollTimer()
+    return pollTick()
   }
 
   function start(): void {

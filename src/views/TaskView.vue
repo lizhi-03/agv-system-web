@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AgvMapCanvas from '../components/AgvMapCanvas.vue'
 import AppButton from '../components/ui/AppButton.vue'
@@ -412,6 +412,10 @@ onMounted(() => {
   void load().catch(() => {})
   void loadWizardOptions().catch(() => {})
   consumeQuery()
+})
+
+onUnmounted(() => {
+  if (previewTimer) window.clearTimeout(previewTimer)
 })
 
 watch(

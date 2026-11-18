@@ -4,14 +4,18 @@ AGV 仿真调度系统的 Web 控制台。Vue 3 + TypeScript 从零实现 Apple 
 
 V2 针对"地图太小 / 操作太困难"重做：**地图优先（全屏 + 滚轮缩放 / 拖拽平移 / 全屏）+ 地图直连操作 + 地图选点任务向导 + 车队卡片 + 编辑器拖拽绘制 + 全局快捷键**；数据通道从"每秒双接口"升级为 **SSE 实时推送 → /agv/live 自适应轮询 → /agv/list 兼容降级** 的单通道模型。
 
+V2.2 做了一轮前端性能优化：路由懒加载 + vendor 拆包、车队/地图编辑页并入统一实时通道、实时数据浅响应、画布按需深度监听，详见 [性能优化（V2.2）](#性能优化v22)。
+
+> 配套后端：[lizhi-03/agv-system](https://github.com/lizhi-03/agv-system)（Spring Cloud + MyBatis + MySQL，A* 路径规划与车辆仿真）。
+
 ## 技术栈
 
 | 类别 | 选择 |
 | --- | --- |
 | 框架 | Vue 3.5（`<script setup>` + Composition API） |
 | 语言 | TypeScript 6（`vue-tsc -b` 严格类型检查） |
-| 构建 | Vite 8 |
-| 路由 | vue-router 5（History 模式） |
+| 构建 | Vite 8（rolldown；路由级懒加载 + `vendor` 独立 chunk） |
+| 路由 | vue-router 5（History 模式，页面组件按需加载） |
 | 请求 | axios（统一响应拆包 + 错误/连接状态收集） |
 | 实时通道 | `EventSource('/api/agv/stream')` SSE + `GET /agv/live`（If-None-Match → 304）自适应轮询 + `/agv/list` 降级 |
 | UI | **自建轻量组件库**（无 Element Plus / 无第三方 UI、图标、图表库） |
@@ -40,10 +44,10 @@ src/
 │   │   └── EmptyState.vue SkeletonBlock.vue ToastHost.vue ConfirmHost.vue
 │   └── AgvMapCanvas.vue  # Canvas 地图：缩放/平移/双击放大、hover、车辆操作条锚点、拖拽绘制
 ├── composables/
-│   ├── useLiveState.ts   # SSE 优先 + 自适应轮询 + 单通道 + 写后立即拉取 + 地图版本增量刷新
+│   ├── useLiveState.ts   # SSE 优先 + 自适应轮询 + 单通道 + 写后立即拉取 + 地图版本增量刷新（withMap 可关）
 │   ├── useAgvCommand.ts  # 车辆命令 in-flight 去重 + toast + 完成后立即刷新
 │   ├── useShortcuts.ts   # g/m/f/t/e/l、? 帮助面板、输入框内不触发
-│   ├── usePolling.ts     # 通用轮询：可见性暂停、in-flight 去重、失败退避、卸载清理
+│   ├── usePolling.ts     # 通用轮询（任务/日志）：可见性暂停、in-flight 去重、失败退避、卸载清理
 │   ├── useToast.ts       # 右上角毛玻璃 toast
 │   ├── useConfirm.ts     # Promise 式二次确认弹窗
 │   ├── useTheme.ts       # 浅色/深色/自动 + localStorage 持久化
@@ -60,16 +64,24 @@ src/
 │   ├── TaskView.vue      # 任务：列表（服务端筛选）+ 地图选点向导（≤4 点击）
 │   ├── MapEditView.vue   # 编辑：拖拽绘制/画笔/撤销重做/宽高编辑/保存摘要
 │   └── LogView.vue       # 日志：服务端级别+关键字筛选
-├── router.ts             # 6 路由（/ /map /agv /task /editor /log，/edit 重定向）
+├── router.ts             # 6 路由（/ /map /agv /task /editor /log，/edit 重定向），全部懒加载
 ├── App.vue               # 毛玻璃侧栏 + sticky 顶栏 + 实时时钟 + 连接/通道卡片 + 快捷键帮助
 └── main.ts
 ```
 
 ## 启动
 
+### 0. 环境要求
+
+- Node.js `^20.19.0` 或 `>=22.12.0`（Vite 8 要求）
+- 现代浏览器（Chrome / Edge / Safari 最新版；需支持 `EventSource`、`ResizeObserver`）
+
 ### 1. 后端（真实数据来源）
 
-后端为 Spring Cloud 工程，前端只依赖网关暴露的 **`http://localhost:8080/api`**：
+后端仓库 [lizhi-03/agv-system](https://github.com/lizhi-03/agv-system) 为 Spring Cloud 工程，前端只依赖网关暴露的 **`http://localhost:8080/api`**：
+
+- 建库：执行后端仓库的 `sql/agv_system.sql`（建库 + 种子地图）。
+- 启动：Windows 下可用后端仓库的 `scripts/start-backend.ps1` 一键启动（无需 Nacos；数据库密码通过环境变量 `AGV_MYSQL_PASSWORD` 传入，不写进仓库）。
 
 - 网关（gateway）监听 `8080`，由它把 `/api/**` 转发到内部业务服务（内部服务端口属于实现细节，以实际部署为准；本机验证时业务服务运行在 18000，由网关内部转发，前端不感知也不直连）。
 - 数据库需初始化 `agv_system` 库及 5 张表，并写入一份 `is_current=1` 的种子地图（含 obstacles / stations，建议包含 `type=charge` 充电站），否则 `/map/current` 返回空、`/agv/path` 与 `/agv/charge` 会失败。
@@ -77,8 +89,9 @@ src/
 ### 2. 前端
 
 ```bash
-cd D:\VSCode\agv-system
-npm install
+git clone https://github.com/lizhi-03/agv-system-web.git
+cd agv-system-web
+npm ci             # 按 package-lock.json 安装
 npm run dev        # http://localhost:5173
 ```
 
@@ -88,8 +101,12 @@ npm run dev        # http://localhost:5173
 
 ```bash
 npm run build      # vue-tsc -b && vite build，产物在 dist/
-npm run preview
+npm run preview    # 本地预览生产包，验收请以此为准而不是 dev
 ```
+
+生产构建配置（`vite.config.ts`）：`target: es2020`、关闭 sourcemap、CSS 按页拆分；`vue / vue-router / axios` 打进独立的 `vendor` chunk，业务代码发版后框架代码仍可命中浏览器缓存。
+
+部署为 History 路由，静态服务器需把未知路径回退到 `index.html`，并把 `/api/**` 反向代理到网关（SSE 接口 `/api/agv/stream` 需关闭代理缓冲，例如 Nginx `proxy_buffering off;`）。
 
 生产环境 API baseURL 为相对路径 `/api`（同源反向代理到网关即可），也可用环境变量覆盖：
 
@@ -101,7 +118,7 @@ VITE_API_BASE=https://example.com/api npm run build
 
 | # | 接口 | UI 入口 |
 | --- | --- | --- |
-| 1 | `POST /agv/list` | 概览/地图实时通道的兼容降级；车队/向导的车辆卡片数据 |
+| 1 | `POST /agv/list` | 实时通道的兼容降级；任务向导的车辆列表；侧栏连接卡「重试」探测 |
 | 2 | `GET /agv/{agvCode}` | 车队卡片 / 地图车辆浮动条「详情」→ 详情抽屉（路径点数、pathIndex、agvPaths 等） |
 | 3 | `POST /agv/batch/{n}` | 车队页「批量加车」（1..50，返回 `string[]` 连续新编号，按钮防抖，新车高亮） |
 | 4 | `POST /agv/charge/{agvCode}` | 车队抽屉 / 地图车辆浮动条「充电」 |
@@ -119,12 +136,12 @@ VITE_API_BASE=https://example.com/api npm run build
 | 16 | `GET /task/cancel/{taskId}` | 任务页行操作「取消」（已完成/已取消/失败禁用） |
 | 17 | `POST /log/page` | 日志页服务端分页 + `level` / `message` 服务端筛选 + 概览最近 6 条日志 |
 | 18 | `POST /agv/preview` | 任务向导选完起终点后自动预览（只规划不落库，显示路径点数/距离/预计时间） |
-| 19 | `GET /agv/live` | 概览/地图实时通道（SSE 降级时使用，`If-None-Match` → 304 无变化） |
-| 20 | `GET /agv/stream` | 概览/地图 SSE 实时推送（`event: state`，单通道优先；`/agv/stream/status` 供排障） |
+| 19 | `GET /agv/live` | 概览/地图/车队/地图编辑实时通道（SSE 降级时使用，`If-None-Match` → 304 无变化） |
+| 20 | `GET /agv/stream` | 概览/地图/车队/地图编辑 SSE 实时推送（`event: state`，单通道优先；`/agv/stream/status` 供排障） |
 
 ## 实时数据通道（V2.1）
 
-概览页与实时地图页**不再每秒请求两个接口**，统一走 `useLiveState.ts` 的单通道模型：
+概览、实时地图、车队、地图编辑 4 个页面统一走 `useLiveState.ts` 的单通道模型（车队与地图编辑只需要车辆数据，传 `withMap: false`，不请求 `/map/current`）：
 
 | 优先级 | 通道 | 行为 |
 | --- | --- | --- |
@@ -137,7 +154,28 @@ VITE_API_BASE=https://example.com/api npm run build
 - 页面隐藏暂停轮询（SSE 保持连接），恢复可见立即补拉；底部连接卡显示 `实时推送 / 轮询（自适应）/ 轮询（兼容）` 与最后同步时间。
 - 概览页辅助数据（任务总数/状态分布、最近 6 条日志）改为 **30s 刷新一次**，且不与 SSE 帧联动（避免重复请求）；SSE 建立前有 1.5s 延迟回退，首次进入不会额外多发 `/agv/live`。
 - **写后立即可见**：调速/启停/充电/上报/建任务/清空/加车等成功后主动刷新一次，不等下一帧推送。
+- `/agv/live` 的每次响应也会刷新侧栏后端连接状态（延迟 / 最后同步时间），只走实时通道的页面同样能显示"已连接"。
 - 实测（1440×900，后端 V2.1）：概览/地图空闲 30s 内**新增 `/api` 请求 ≤2 次**（概览仅 task/page + log/page 各 1 次；实时数据走 1 条 SSE 长连接；V1 为约 120 请求/分钟/页）。
+
+## 性能优化（V2.2）
+
+| 改动 | 位置 | 效果 |
+| --- | --- | --- |
+| 路由级懒加载 | `src/router.ts` | 6 个页面各自成 chunk，首屏只加载当前页面 |
+| `vendor` 独立 chunk | `vite.config.ts` | 框架代码与业务代码分离，发版后框架仍走缓存 |
+| 车队页、地图编辑页并入统一实时通道 | `AgvView.vue`、`MapEditView.vue` | 去掉各自 2s / 3s 的 `/agv/list` 轮询，SSE 生效时为 0 轮询请求 |
+| 实时数据 `shallowRef` | `useLiveState.ts` | 每帧整体替换快照，不再对车辆规划路径等大数组做深层代理 |
+| 画布按需深度监听 | `AgvMapCanvas.vue` | 只有编辑器（原地修改地图）深度监听；实时页按引用变化重绘，避免每帧遍历整份地图 |
+| 卸载清理 | `TaskView.vue` | 离开任务页时清理路径预览的防抖定时器 |
+
+构建产物对比（`npm run build`）：
+
+| | 优化前 | 优化后 |
+| --- | --- | --- |
+| JS 文件 | 1 个，294.8 kB（gzip 101.0 kB） | 入口 22.7 kB（gzip 9.2 kB）+ `vendor` 159.1 kB（gzip 60.0 kB）+ 各页面 5–17 kB 按需加载 |
+| CSS | 1 个，72.0 kB | 入口 21.3 kB + 各页面样式按需加载 |
+
+以上数字来自本地构建；实际首屏指标（LCP / INP / CLS）请在目标环境用 Lighthouse 或 Performance 面板复测。
 
 ## 设计系统摘要
 
@@ -163,7 +201,7 @@ VITE_API_BASE=https://example.com/api npm run build
 - 列表支持服务端筛选：任务编号、状态分段、车辆下拉、pageSize、分页；自动刷新可开关。
 
 ### 车队 `/agv`
-- 车辆卡片网格：状态/电量/位置/任务一站式；点卡片打开详情抽屉，抽屉内 36px 大按钮（启动/暂停/充电/在地图查看/上报位置/保存速度）+ 实时调速滑杆。
+- 车辆卡片网格：状态/电量/位置/任务一站式，数据随实时通道更新（工具栏右侧「实时更新」开关可暂停）；点卡片打开详情抽屉，抽屉内 36px 大按钮（启动/暂停/充电/在地图查看/上报位置/保存速度）+ 实时调速滑杆。
 - 批量加车默认 1 辆，返回连续编号并高亮新车（可连续添加，不会重复注册）。
 
 ### 地图编辑 `/editor`
